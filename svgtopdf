@@ -1,0 +1,6 @@
+#!/bin/bash
+for F in $*; do
+  echo "Converting $F ..."
+  rsvg-convert -f pdf -o ${F%%.svg}.pdf $F
+done
+

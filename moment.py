@@ -98,14 +98,15 @@ class neutrino_propagator:
     """Routines for generating the Galactic magnetic field structure
        and propagating neutrinos through it."""
     
-    def __init__(self, d=10*kpc, theta_los=0., a_B_coh=0., Bturb=2.,
+    def __init__(self, d=10*kpc, theta_los=0., phi_los=np.pi, a_B_coh=0., Bturb=2.,
                  outer_scale=0.01, mu_range=np.linspace(0, 4e-13, 20)*mu_b):
         """Initialize the object and generate initial B field map.
            
            Parameters:
                d:            distance to the neutrino source
-               theta_los:    orientation of the line of sight. 0 corresponds to a l.o.s.
-                             pointing towards the Galactic Center
+               phi_los:      orientation of the line of sight along the Galactic plane.
+                             0 corresponds to a l.o.s. pointing away from the Galactic Center
+               theta_los:    orientation of the line of sight relative to the Galactic plane
                a_B_coh:      nuisance parameter describing the shift in the strength
                              of thw homogeneous (large-scale) magnetic field relative
                              to the fiducial model from https://arxiv.org/abs/0704.0458
@@ -116,6 +117,7 @@ class neutrino_propagator:
         
         self.d         = d
         self.theta_los = theta_los
+        self.phi_los   = phi_los
 
         # load cross-section data [in 1e-43 cm^2]
         self.sigma            = {}
@@ -144,8 +146,9 @@ class neutrino_propagator:
                                 [self.sigma['barx_NC'], self.sigma['barx_ES']]]
 
         # generate default B field map
-        self.generate_B_field_gal(d=d, theta_los=theta_los, a_B_coh=a_B_coh, Bturb=Bturb,
-                                  outer_scale=outer_scale, mu_range=mu_range)
+        self.generate_B_field_gal(d=d, theta_los=theta_los, phi_los=phi_los,
+                                  a_B_coh=a_B_coh, Bturb=Bturb, outer_scale=outer_scale,
+                                  mu_range=mu_range)
     
     #-----------------------------------------------------------------------
 
@@ -158,7 +161,7 @@ class neutrino_propagator:
 
     #-----------------------------------------------------------------------
 
-    def generate_B_field_gal(self, d=10*kpc, theta_los=0., a_B_coh=0., Bturb=2.,
+    def generate_B_field_gal(self, d=10*kpc, theta_los=0., phi_los=np.pi, a_B_coh=0., Bturb=2.,
                              outer_scale=0.01, mu_range=np.linspace(0, 4e-13, 20)*mu_b,
                              random_B_coh=False, plot=False, cpus=1):
         """Generate a new Galactic B field map with the given parameters
@@ -166,8 +169,9 @@ class neutrino_propagator:
            
            Parameters:
                d:            distance to the neutrino source
-               theta_los:    orientation of the line of sight. 0 corresponds to a l.o.s.
-                             pointing towards the Galactic Center
+               phi_los:      orientation of the line of sight along the Galactic plane.
+                             0 corresponds to a l.o.s. pointing away from the Galactic Center
+               theta_los:    orientation of the line of sight relative to the Galactic plane
                a_B_coh:      nuisance parameter describing the shift in the strength
                              of thw homogeneous (large-scale) magnetic field relative
                              to the fiducial model from https://arxiv.org/abs/0704.0458
@@ -184,6 +188,7 @@ class neutrino_propagator:
         
         self.d         = d
         self.theta_los = theta_los
+        self.phi_los   = phi_los
         N              = 1000              # number of sampling points along line of sight
         d_table        = np.linspace(0, d/kpc, N) # dicretized line-of-sight coordinates
 
@@ -220,7 +225,6 @@ class neutrino_propagator:
                                    1.5, -1.0, -0.5, -0.05, -1.0, -0.5, -0.3, -0.7 ])  # arms
         r_B_table      = np.array([3.7,  # approx. radius (in kpc) at which B field was read from the plot
                                    7.0,  7.7,  7.6,  12.2, 16.7, 17.3,  7.0,  6.5 ])
-        phi_los        = np.pi           # azimuthal angle of l.o.s. (0 = away from GC)
         X_Earth        = np.array([8.5,0,0]) # our location in the Milky Way
         X_los_table    = d_table[None,:] * np.array([np.cos(theta_los) * np.cos(phi_los), # l.o.s. (x,y,z) coordinates
                                                      np.cos(theta_los) * np.sin(phi_los),
@@ -281,7 +285,7 @@ class neutrino_propagator:
         
         # plots of coherent B-field component
         if plot:
-            fig = plt.figure(figsize=(13,6))
+            fig = plt.figure(figsize=(14,6))
             ax1 = plt.subplot(121)
 
             # load background image of Milky Way
@@ -310,11 +314,13 @@ class neutrino_propagator:
                 if np.count_nonzero(r_table[ii]) == 0:
                     break
 
-            clip_path  = matplotlib.path.Path([[0,-20],[0,0],[-20,25],[-20,-20],[0,-20]])
+#            clip_path  = matplotlib.path.Path([[0,-20],[0,0],[-20,25],[-20,-20],[0,-20]])
+            clip_path  = matplotlib.path.Path([[0,-20],[0,0],[20,25],[20,-20],[0,-20]])
             clip_patch = matplotlib.patches.PathPatch(clip_path, fc='None', ec='#00000077')
             ax1.add_patch(clip_patch)
-            ax1.imshow(B_table, extent=[min(x_table), max(x_table), min(x_table), max(x_table)],
-                       cmap='YlOrRd', clip_path=clip_patch, clip_on=True)
+            B_plot = ax1.imshow(B_table.T*1e10, vmin=-2., vmax=2., origin='lower',
+                                extent=[min(x_table), max(x_table), min(x_table), max(x_table)],
+                                cmap='RdYlBu', clip_path=clip_patch, clip_on=True, alpha=0.7)
 
             # draw contours of spiral arms and other decorations
             phi_table_plot = np.linspace(0, 3*np.pi, 100)
@@ -324,27 +330,24 @@ class neutrino_propagator:
                          color='#99000077', lw=1)
             ax1.add_artist(plt.Circle((0,0), 5, ec='#99000077', color='None', lw=1))
             ax1.add_artist(plt.Circle((0,0), 3, ec='#99000077', color='None', lw=1))
-#            ax1.add_artist(plt.Circle((0,0), 5, color='#8888ff'))
-#            ax1.add_artist(plt.Circle((0,0), 3, color='white'))
 
-            ax1.annotate(r'$\boldmath{\bigoplus}$', X_Earth[:2], color='#3333ff',
+            ax1.annotate(r'$\boldsymbol{\pmb\bigoplus}$', X_Earth[:2], color='#00eeee',
                          ha='center', va='center', size=20)
             ax1.arrow(X_Earth[0], X_Earth[1],
                       r_los_table[-1]*np.cos(phi_los_table[-1]) - X_Earth[0],
                       r_los_table[-1]*np.sin(phi_los_table[-1]) - X_Earth[1],
-                      color='#3333ff', length_includes_head=True, width=0.1,
+                      color='#44ffff', length_includes_head=True, width=0.1,
                       head_width=0.8, zorder=5)
-#            ax1.add_artist(plt.Circle(X_Earth, 0.3, color='#5555ff'))
-#            ax1.plot(r_los_table*np.cos(phi_los_table),
-#                     r_los_table*np.sin(phi_los_table), color='black')
             ax1.set_xlim(-15,15)
             ax1.set_ylim(-15,15)
-            ax1.axis('off')
-#            ax1.xaxis.set_ticks(np.arange(-15, 15.1, 5))
-#            ax1.yaxis.set_ticks(np.arange(-15, 15.1, 5))
-#            ax1.set_xlabel('x [kpc]')  # note: this plot is rotated 90 degrees clockwise
-#            ax1.set_ylabel('y [kpc]')  #   compared to fig. 4 of https://arxiv.org/abs/0704.0458
-#            ax1.grid()
+#            ax1.axis('off')
+            ax1.xaxis.set_ticks(np.arange(-15, 15.1, 5))
+            ax1.yaxis.set_ticks(np.arange(-15, 15.1, 5))
+            ax1.set_xlabel('x [kpc]')  # note: this plot is rotated 90 degrees clockwise
+            ax1.set_ylabel('y [kpc]')  #   compared to fig. 4 of https://arxiv.org/abs/0704.0458
+            ax1.grid()
+            fig.colorbar(B_plot, ax=ax1, shrink=0.87, aspect=18, alpha=0.7, extend='both')
+            ax1.annotate(r'$\vec{B}$~[$\mu$G]', (15,16.3), annotation_clip=False)
 
             ax2 = plt.subplot(122)
             ax2.plot(r_los_table,np.sqrt(Bcoh_map[0]**2+Bcoh_map[1]**2), label=r'$|B|$')
@@ -605,7 +608,7 @@ class neutrino_propagator:
     
     #-----------------------------------------------------------------------
 
-    def propagate_sn_neutrinos(self, mu, d=None, theta_los=None, mh='NH',
+    def propagate_sn_neutrinos(self, mu, d=None, theta_los=None, phi_los=None, mh='NH',
                                a_B_coh=None, Bturb=None, outer_scale=None,
                                a_norm=0., random_B_coh=False,
                                dn=True, hk=True, return_rates=False):
@@ -618,8 +621,9 @@ class neutrino_propagator:
            Parameters:
                mu:           neutrino magnetic moment
                d:            distance to the neutrino source
-               theta_los:    orientation of the line of sight. 0 corresponds to a l.o.s.
-                             pointing towards the Galactic Center
+               phi_los:      orientation of the line of sight along the Galactic plane.
+                             0 corresponds to a l.o.s. pointing away from the Galactic Center
+               theta_los:    orientation of the line of sight relative to the Galactic plane
                mh:           the neutrino mass ordering ('NH' or 'IH'), relevant
                              for propagating neutrinos out of the SN.
                a_B_coh:      nuisance parameter describing the shift in the strength
@@ -664,14 +668,17 @@ class neutrino_propagator:
             d = self.d
         if theta_los == None:
             theta_los = self.theta_los
+        if phi_los == None:
+            phi_los = self.phi_los
         if (a_B_coh != None and Bturb != None and outer_scale != None) \
-                or d != self.d or theta_los != self.theta_los:
+                or d != self.d or theta_los != self.theta_los or phi_los != self.phi_los:
             print("regenerating galactic B-fields.")
-            self.generate_B_field_gal(d=d, theta_los=theta_los, a_B_coh=a_B_coh,
-                                      Bturb=Bturb, outer_scale=outer_scale,
+            self.generate_B_field_gal(d=d, theta_los=theta_los, phi_los=phi_los,
+                                      a_B_coh=a_B_coh, Bturb=Bturb, outer_scale=outer_scale,
                                       random_B_coh=random_B_coh)
             self.d         = d
             self.theta_los = theta_los
+            self.phi_los   = phi_los
 
         def spec(x, mean, alph):
             """Energy spectrum of SN neutrinos in MeV"""
