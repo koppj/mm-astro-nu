@@ -427,14 +427,30 @@ class neutrino_propagator:
            (and randomized turbulence).
            
            Parameters:
-               d:            distance to the neutrino source
+               d:            distance to the neutrino source.
+                             If this is a list of two elements, the are interpreted
+                             as a distance range. For each field profile, a random
+                             distance within that range will be chosen following
+                             a quadratic distribution.
                d_in_cluster: distance traveled inside galaxy cluster
                B_cluster:    intracluster magnetic field [muG]
                B_extragal:   magnetic field in between galaxy clusters [muG]
                Nbs:          number of B-field profiles to generate
                verbosity:    if > 0, print out extra status information"""
         
-        self.d     = d
+#        if hasattr(d, '__iter__'):
+#            if len(d) == 2:
+#                self.d_min = d[0]
+#                self.d_max = d[1]
+#                self.d     = 0.5 * d[0] - 1,  # initialize with values outside the range
+#                ii         = (self.d < d[0]) | (self.d > d[1])
+#                while np.count_nonzero(ii) > 0:
+#                    self.d[ii] = self.d_max * rnd.power(3, size=np.count_nonzero(ii))
+#            else:
+#                raise ValueError("don't know how to interpret given SN distance")
+#        else:
+#            self.d = d
+        self.d = d
 
         N          = 1000  # number of sampling points along line of sight
         Nc         = 100   # number of sampling points for cluster magnetic fields
