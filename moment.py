@@ -366,7 +366,7 @@ class neutrino_propagator:
         rho0 = qp.basis(2, 0) * qp.basis(2, 0).dag() # initial density matrix
         op1  = qp.basis(2, 0) * qp.basis(2, 0).dag() # operators to track the diagonal elements
         op2  = qp.basis(2, 1) * qp.basis(2, 1).dag() #    of the density matrix
-        H_dx = 0.5 * (-1j) * qp.Qobj([[ 0, 1],
+        H_dx = 0.5 * (+1j) * qp.Qobj([[ 0, 1],
                                       [ -1, 0]])*kpc/(hbar*c)
         H_dy = 0.5 * (-1j) * qp.Qobj([[ 0, 1j],
                                       [ 1j, 0]])*kpc/(hbar*c)
@@ -430,27 +430,24 @@ class neutrino_propagator:
                d:            distance to the neutrino source.
                              If this is a list of two elements, the are interpreted
                              as a distance range. For each field profile, a random
-                             distance within that range will be chosen following
-                             a quadratic distribution.
+                             distance within that range will be chosen (from a uniform
+                             distribution as the larger number of sources at larger
+                             distances is compensated by the lower flux from ecah source)
                d_in_cluster: distance traveled inside galaxy cluster
                B_cluster:    intracluster magnetic field [muG]
                B_extragal:   magnetic field in between galaxy clusters [muG]
                Nbs:          number of B-field profiles to generate
                verbosity:    if > 0, print out extra status information"""
         
-#        if hasattr(d, '__iter__'):
-#            if len(d) == 2:
-#                self.d_min = d[0]
-#                self.d_max = d[1]
-#                self.d     = 0.5 * d[0] - 1,  # initialize with values outside the range
-#                ii         = (self.d < d[0]) | (self.d > d[1])
-#                while np.count_nonzero(ii) > 0:
-#                    self.d[ii] = self.d_max * rnd.power(3, size=np.count_nonzero(ii))
-#            else:
-#                raise ValueError("don't know how to interpret given SN distance")
-#        else:
-#            self.d = d
-        self.d = d
+        if hasattr(d, '__iter__'):
+            if len(d) == 2:
+                self.d_min = d[0]
+                self.d_max = d[1]
+                self.d     = rnd.uniform(self.d_min, self.d_max, size=Nbs)
+            else:
+                raise ValueError("don't know how to interpret given SN distance")
+        else:
+            self.d = np.ones(Nbs) * d
 
         N          = 1000  # number of sampling points along line of sight
         Nc         = 100   # number of sampling points for cluster magnetic fields
@@ -502,10 +499,10 @@ class neutrino_propagator:
             print("generating intercluster field - x direction ...")
         lout = 1e4*kpc     # outer scale of turbulence
         kmin = 2*np.pi/lout
-        kmax = Nb * 2 * np.pi/(d - 2*d_in_cluster) + kmin
-        R = np.linspace(kmin, kmax, int(Nb/2)+1)
-        Btemp = np.array([[np.random.normal(0, R[i]**(-11/6)) if i in [0, int(Nb/2)]
-                      else np.random.normal(0, R[i]**(-11/6))
+        kmax = np.array([ Nb * 2 * np.pi/(d - 2*d_in_cluster) + kmin for d in self.d ])
+        R = np.array([ np.linspace(kmin, kk, int(Nb/2)+1) for kk in kmax ])
+        Btemp = np.array([[np.random.normal(0, R[j][i]**(-11/6)) if i in [0, int(Nb/2)]
+                      else np.random.normal(0, R[j][i]**(-11/6))
                             * np.exp(1j * np.random.uniform(0, 1) * np.pi)
                       for i in range(int(Nb/2)+1)] for j in range(Nbs)])
         Bk1 = np.array([[Btemp[j][i] if i <= Nb/2
@@ -517,8 +514,8 @@ class neutrino_propagator:
         
         if verbosity > 0:
             print("generating intercluster field - y direction ...")
-        Btemp = np.array([[np.random.normal(0, R[i]**(-11/6)) if i in [0, int(Nb/2)]
-                      else np.random.normal(0, R[i]**(-11/6))
+        Btemp = np.array([[np.random.normal(0, R[j][i]**(-11/6)) if i in [0, int(Nb/2)]
+                      else np.random.normal(0, R[j][i]**(-11/6))
                             * np.exp(1j * np.random.uniform(0, 1) * 2 * np.pi)
                       for i in range(int(Nb/2)+1)] for j in range(Nbs)])
         Bk2 = np.array([[Btemp[j][i] if i <= Nb/2
@@ -528,13 +525,15 @@ class neutrino_propagator:
         By = [By[j]*np.sqrt(N)*B_extragal_table[j]*1e-10/(np.sqrt(np.sum(np.abs(By[j])**2)))
                 for j in range(Nbs)]
         
-        d_table = np.concatenate(( np.linspace(0,                        d_in_cluster, int(Nc/2)), 
-                                   np.linspace(d_in_cluster+0.001*kpc,   d-d_in_cluster, Nb),
-                                   np.linspace(d-d_in_cluster+0.001*kpc, d, int(Nc/2)) )) / kpc
-        self.B_extragal_x = [ interpolate.interp1d(d_table,
+        d_table = np.array([
+                      np.concatenate(( np.linspace(0,                        d_in_cluster, int(Nc/2)), 
+                                       np.linspace(d_in_cluster+0.001*kpc,   d-d_in_cluster, Nb),
+                                       np.linspace(d-d_in_cluster+0.001*kpc, d, int(Nc/2)) )) / kpc 
+                      for d in self.d])
+        self.B_extragal_x = [ interpolate.interp1d(d_table[j],
                   np.concatenate((Bx_c[j][:int(Nc/2)], Bx[j], Bx_c[j][int(Nc/2):])),
                   bounds_error=False, fill_value=0.) for j in range(Nbs) ]
-        self.B_extragal_y = [ interpolate.interp1d(d_table,
+        self.B_extragal_y = [ interpolate.interp1d(d_table[j],
                   np.concatenate((By_c[j][:int(Nc/2)], By[j], By_c[j][int(Nc/2):])),
                   bounds_error=False, fill_value=0.) for j in range(Nbs) ]
 
@@ -586,8 +585,9 @@ class neutrino_propagator:
 
     #-----------------------------------------------------------------------
 
-    def P_osc_extragal(self, mu, idx=0):
-        """compute the oscillation probabilities of neutrino in the
+    def P_osc_extragal_2f(self, mu, idx=0):
+        """compute the 2-flavor (one \nu_L + one N_R) neutrino oscillation
+           probabilities of neutrinos with magnetic moments in the
            extragalctic magnetic fields
 
            Parameters:
@@ -603,11 +603,11 @@ class neutrino_propagator:
         rho0 = qp.basis(2, 0) * qp.basis(2, 0).dag() # initial density matrix
         op1  = qp.basis(2, 0) * qp.basis(2, 0).dag() # operators to track diagonal
         op2  = qp.basis(2, 1) * qp.basis(2, 1).dag() #   elements of the density matrix
-        H_dx = 0.5 * (-1j) * qp.Qobj([[ 0, 1],
+        H_dx = 0.5 * (+1j) * qp.Qobj([[ 0, 1],
                                       [ -1, 0]])*kpc/(hbar*c)
         H_dy = 0.5 * (-1j) * qp.Qobj([[ 0, 1j],
                                       [ 1j, 0]])*kpc/(hbar*c)
-        dist = np.linspace(0, self.d/kpc, 1000)
+        dist = np.linspace(0, self.d[idx]/kpc, 1000)
 
         def B_varx(t, args):
             """Generate variable B-field in x-direction"""
@@ -620,8 +620,71 @@ class neutrino_propagator:
         H_v = [[mu*H_dx, B_varx], [mu*H_dy, B_vary]]
         result = qp.mesolve(H_v, rho0, dist, e_ops=[op1, op2],
                             options=qp.Options(nsteps=1E8))
-        return result.expect[0][-1]
-    
+        return np.array(result.expect)
+
+    #-----------------------------------------------------------------------
+
+    def P_osc_extragal_6f(self, mu, initial_comp=[2,1,0], U=None, idx=0):
+        """compute the 6-flavor (3 \nu_L + 3 N_R) neutrino oscillation
+           probabilities of neutrinos with magnetic moments in the
+           extragalctic magnetic fields
+
+           Parameters:
+               mu:           the 3x3 neutrino magnetic moment matrix
+               initial_comp: initial flavor composition (3x3 vector, default=[2,1,0])
+               U:            3x3 PMNS matrix. If None, compute on the fly
+               idx:          the index of the pre-computed B-field configuration to use"""
+
+        if not hasattr(self, 'B_extragal_x'):
+            raise ValueError('extragalactic B field configuration not initialized.')
+        if idx > len(self.B_extragal_x):
+            raise ValueError('invalid B field configuration index: {:d}'.format(idx))
+        if U == None:
+            U6 = PMNS(theta12,theta13,theta23)
+            U  = U6[:3,:3]
+        else:
+            U6 = np.block([[U,0],[0,U]])
+
+        zero_3 = np.diag([0,0,0])
+
+        # definition of states and operators
+        rho_f  = np.diag(initial_comp)       # initial 3x3 density matrix - flavor basis
+        rho_m  = np.linalg.multi_dot([U.T, rho_f, U])      #              - mass basis
+        rho0   = qp.Qobj(np.block([[rho_m, zero_3], [zero_3, zero_3]]))
+                   # initial density matrix for QuTIP, assuming incoh. mix of mass states
+        op     = [ qp.basis(6,j) * qp.basis(6,j).dag()     # operators that track diagonal
+                       for j in range(6) ]                 #   elems of the density matrix
+        r      = 1e20        # rescaling factor - QuTIP can't handle small entries in H
+
+        mu_m   = r * np.linalg.multi_dot([U.T, mu, U])     # magn. moments in mass basis
+        H_0_3  = qp.Qobj( r*np.diag([0,m21,m31]) / (2.*1e14) )  # 1e14 eV = 100 TeV
+        H_0    = qp.Qobj(np.block([[H_0_3,  zero_3],
+                                   [zero_3, H_0_3]])) * kpc/(hbar*c)
+        H_dx   = 0.5 * (+1j) * qp.Qobj(np.block([[zero_3, mu_m],
+                                                 [-mu_m,  zero_3]])) * kpc/(hbar*c)
+        H_dy   = 0.5 * (-1j) * qp.Qobj(np.block([[zero_3,  mu_m*1j],
+                                                 [mu_m*1j, zero_3]])) * kpc/(hbar*c)
+        dist   = np.linspace(0, self.d[idx]/kpc, 1000)
+
+        # evolve von Neumann equation
+        def B_varx(t, args):
+            """Generate variable B-field in x-direction"""
+            return self.B_extragal_x[idx](t)
+
+        def B_vary(t, args):
+            """Generate variable B-field in y-direction"""
+            return self.B_extragal_y[idx](t)
+
+        def iid(t, args):
+            return 1.
+
+        H_v = [[(1/r)*H_0, iid], [(1/r)*H_dx, B_varx], [(1/r)*H_dy, B_vary]]
+        result = qp.mesolve(H_v, rho0, dist, e_ops=[op[j] for j in range(6)],
+                            options=qp.Options(nsteps=1E8))
+
+        # convert results back to flavor basis
+        return np.dot(np.abs(U6)**2, result.expect)
+
     #-----------------------------------------------------------------------
 
     def propagate_sn_neutrinos(self, mu, d=None, theta_los=None, phi_los=None, mh='NH',
