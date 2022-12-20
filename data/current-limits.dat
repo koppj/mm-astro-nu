@@ -1,0 +1,21 @@
+# existing limits on neutrino magnetic moments from the literature
+# (all numbers in units of the Bohr magneton)
+
+# white Dwarf luminosity function, https://arxiv.org/abs/1406.6034
+5e-12
+
+# tip of the red giant branch, https://arxiv.org/abs/2007.03694
+1.2e-12
+
+# Borexino, https://arxiv.org/abs/1707.09355
+2.8e-11
+
+# Gemma, Beda:2013mta, https://dx.doi.org/10.1134/S1547477113020027
+2.9e-11
+
+# PandaX, https://arxiv.org/abs/2008.06485
+4.9e-11
+
+# XENONnT, https://arxiv.org/abs/2207.11330
+6.4e-12
+
