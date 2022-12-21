@@ -14,4 +14,4 @@ are affected in presence of neutrino magnetic moments.
 The backend (where most of the physics happens) can be found in the `neutrino_propagator` class, which
 is implemented in `moment.py`.
 
-Ancillary files can be found in the `data/`, `cross_sections`, and `an-data` subdirectories.
+Ancillary files can be found in the `data/`, `cross_sections/`, and `sn-data/` subdirectories.
